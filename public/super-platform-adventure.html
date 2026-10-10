@@ -1,2 +1,93 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Super Platform Adventure</title></head><body><p>Game file upload in progress.</p></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Super Mario-style Platform Adventure</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#101827; color:#fff; font-family:system-ui,Arial,sans-serif; display:flex; min-height:100vh; align-items:center; justify-content:center; padding:14px; }
+  .wrap { width:min(100%,960px); }
+  h1 { font-size:clamp(20px,4vw,30px); margin:0 0 8px; text-align:center; }
+  .sub { text-align:center; color:#cbd5e1; margin:0 0 12px; font-size:14px; }
+  canvas { display:block; width:100%; aspect-ratio:16/9; background:#7dd3fc; border:3px solid #e2e8f0; border-radius:12px; image-rendering:pixelated; }
+  .hud { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; margin:10px 2px; font-weight:700; }
+  .controls { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:8px; }
+  .cluster { display:flex; gap:10px; }
+  button { color:white; background:#334155; border:2px solid #64748b; border-radius:14px; padding:14px 18px; min-width:58px; font-size:20px; font-weight:800; touch-action:manipulation; user-select:none; }
+  button:active { background:#0f766e; transform:scale(.97); }
+  .jump { background:#b91c1c; min-width:90px; }
+  .note { color:#cbd5e1; font-size:12px; text-align:center; margin-top:9px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🍄 Super Platform Adventure</h1>
+  <p class="sub">Collect coins, jump over enemies, and reach the flag!</p>
+  <canvas id="game" width="960" height="540" aria-label="Platform game"></canvas>
+  <div class="hud"><span id="coins">🪙 Coins: 0</span><span id="lives">❤️ Lives: 3</span><span id="status">➡️ Reach the flag!</span></div>
+  <div class="controls">
+    <div class="cluster"><button id="left" aria-label="Move left">◀</button><button id="right" aria-label="Move right">▶</button></div>
+    <button id="jump" class="jump" aria-label="Jump">JUMP ⤴</button>
+  </div>
+  <div class="note">Keyboard: ← → or A/D to move · Space / ↑ to jump · Enter to restart · Works with touch controls too.</div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('game'), ctx = canvas.getContext('2d');
+  const W=960,H=540, worldW=3000, gravity=.62;
+  let keys={}, cam=0, coins=0, lives=3, won=false, gameOver=false;
+  const player={x:60,y:390,w:30,h:42,vx:0,vy:0,onGround:false,inv:0};
+  const platforms=[
+    {x:0,y:475,w:600,h:65},{x:690,y:475,w:390,h:65},{x:1170,y:475,w:460,h:65},
+    {x:1710,y:475,w:520,h:65},{x:2320,y:475,w:680,h:65},
+    {x:230,y:385,w:120,h:18},{x:430,y:320,w:130,h:18},{x:770,y:385,w:130,h:18},
+    {x:980,y:330,w:110,h:18},{x:1270,y:380,w:130,h:18},{x:1480,y:315,w:140,h:18},
+    {x:1810,y:390,w:140,h:18},{x:2040,y:330,w:120,h:18},{x:2440,y:390,w:140,h:18}
+  ];
+  const coinList=[280,325,475,520,810,850,1010,1050,1300,1350,1515,1560,1850,1900,2070,2110,2480,2530,2630].map((x,i)=>({x,y:[345,345,280,280,345,345,285,285,340,340,270,270,350,350,285,285,350,350,420][i],got:false}));
+  const enemies=[{x:520,y:435,v:1.2,lo:490,hi:590,alive:true},{x:900,y:435,v:1.4,lo:790,hi:1030,alive:true},{x:1370,y:435,v:1.6,lo:1200,hi:1590,alive:true},{x:1900,y:435,v:1.5,lo:1750,hi:2190,alive:true},{x:2540,y:435,v:1.7,lo:2370,hi:2820,alive:true}];
+  const flagX=2870;
+  function reset(){player.x=60;player.y=390;player.vx=player.vy=0;player.inv=0;cam=0;coins=0;lives=3;won=gameOver=false;coinList.forEach(c=>c.got=false);enemies.forEach(e=>e.alive=true);updateHud();}
+  function updateHud(){document.getElementById('coins').textContent='🪙 Coins: '+coins;document.getElementById('lives').textContent='❤️ Lives: '+lives;document.getElementById('status').textContent=won?'🏆 You win!':gameOver?'💥 Game over':'➡️ Reach the flag!';}
+  function rect(a,b){return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;}
+  function jump(){if(player.onGround&&!won&&!gameOver){player.vy=-13.2;player.onGround=false;}}
+  document.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if([' ','arrowup','arrowleft','arrowright'].includes(e.key.toLowerCase()))e.preventDefault();if(e.key===' '||e.key==='ArrowUp'||e.key.toLowerCase()==='w')jump();if(e.key==='Enter'&&(won||gameOver))reset();});
+  document.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+  function bind(id,key){const b=document.getElementById(id);const on=e=>{e.preventDefault();keys[key]=true;};const off=e=>{e.preventDefault();keys[key]=false;};b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);b.addEventListener('pointerleave',off);b.addEventListener('pointercancel',off);}
+  bind('left','arrowleft');bind('right','arrowright');document.getElementById('jump').addEventListener('pointerdown',e=>{e.preventDefault();jump();});
+  function update(){
+    if(won||gameOver)return;
+    const oldY=player.y;
+    player.vx=0;if(keys.arrowleft||keys.a)player.vx=-4.3;if(keys.arrowright||keys.d)player.vx=4.3;
+    player.x=Math.max(0,Math.min(worldW-player.w,player.x+player.vx));
+    player.vy=Math.min(14,player.vy+gravity);player.y+=player.vy;player.onGround=false;
+    for(const p of platforms){if(rect(player,p)&&oldY+player.h<=p.y+8&&player.vy>=0){player.y=p.y-player.h;player.vy=0;player.onGround=true;}}
+    for(const c of coinList){if(!c.got&&rect(player,{x:c.x-10,y:c.y-10,w:20,h:20})){c.got=true;coins++;}}
+    if(player.inv>0)player.inv--;
+    for(const e of enemies){if(!e.alive)continue;e.x+=e.v;if(e.x<e.lo||e.x>e.hi)e.v*=-1;
+      if(rect(player,{x:e.x,y:e.y,w:34,h:38})){if(player.vy>1&&oldY+player.h<e.y+18){e.alive=false;player.vy=-8;}else if(player.inv===0){lives--;player.inv=80;player.vy=-6;player.x=Math.max(0,player.x-55);if(lives<=0)gameOver=true;}}
+    }
+    if(player.y>H+100){lives--;player.x=Math.max(0,player.x-100);player.y=300;player.vy=0;player.inv=80;if(lives<=0)gameOver=true;}
+    if(player.x>flagX-10)won=true;
+    cam=Math.max(0,Math.min(worldW-W,player.x-W*.35));updateHud();
+  }
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    const sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#7dd3fc');sky.addColorStop(1,'#dbeafe');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#86c98a';for(let i=0;i<9;i++){let x=i*390-(cam*.22%390);ctx.beginPath();ctx.arc(x+120,450,150,Math.PI,0);ctx.fill();}
+    ctx.fillStyle='rgba(255,255,255,.9)';for(let i=0;i<8;i++){let x=(i*260-cam*.35%260);let y=65+(i%3)*45;ctx.beginPath();ctx.arc(x,y,22,0,Math.PI*2);ctx.arc(x+25,y-12,30,0,Math.PI*2);ctx.arc(x+55,y,23,0,Math.PI*2);ctx.fill();}
+    ctx.save();ctx.translate(-cam,0);
+    for(const p of platforms){ctx.fillStyle='#9a5b2e';ctx.fillRect(p.x,p.y,p.w,p.h);ctx.fillStyle='#35a853';ctx.fillRect(p.x,p.y,p.w,10);ctx.fillStyle='#6b3d25';for(let x=p.x+12;x<p.x+p.w;x+=42)ctx.fillRect(x,p.y+22,18,5);}
+    for(const c of coinList){if(c.got)continue;ctx.fillStyle='#facc15';ctx.beginPath();ctx.ellipse(c.x,c.y,9,13,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#ca8a04';ctx.lineWidth=3;ctx.stroke();ctx.fillStyle='#fff2a8';ctx.fillRect(c.x-2,c.y-7,3,12);}
+    for(const e of enemies){if(!e.alive)continue;ctx.fillStyle='#92400e';ctx.beginPath();ctx.ellipse(e.x+17,e.y+21,17,17,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.fillRect(e.x+7,e.y+10,7,9);ctx.fillRect(e.x+21,e.y+10,7,9);ctx.fillStyle='#111827';ctx.fillRect(e.x+10,e.y+13,3,5);ctx.fillRect(e.x+24,e.y+13,3,5);ctx.fillStyle='#451a03';ctx.fillRect(e.x+4,e.y+33,10,5);ctx.fillRect(e.x+21,e.y+33,10,5);}
+    ctx.fillStyle='#e5e7eb';ctx.fillRect(flagX,235,8,240);ctx.fillStyle='#ef4444';ctx.beginPath();ctx.moveTo(flagX+8,240);ctx.lineTo(flagX+85,265);ctx.lineTo(flagX+8,290);ctx.closePath();ctx.fill();ctx.fillStyle='#fbbf24';ctx.beginPath();ctx.arc(flagX+4,232,9,0,Math.PI*2);ctx.fill();
+    if(player.inv%10<7){ctx.fillStyle='#b91c1c';ctx.fillRect(player.x+3,player.y,25,10);ctx.fillRect(player.x,player.y+8,31,5);ctx.fillStyle='#f2bd8c';ctx.fillRect(player.x+7,player.y+10,18,14);ctx.fillStyle='#1d4ed8';ctx.fillRect(player.x+4,player.y+24,24,13);ctx.fillRect(player.x+1,player.y+35,11,7);ctx.fillRect(player.x+19,player.y+35,11,7);ctx.fillStyle='#111827';ctx.fillRect(player.x+20,player.y+14,3,4);ctx.fillStyle='#7f1d1d';ctx.fillRect(player.x+1,player.y+4,9,5);}
+    ctx.restore();
+    if(won||gameOver){ctx.fillStyle='rgba(15,23,42,.72)';ctx.fillRect(0,0,W,H);ctx.textAlign='center';ctx.fillStyle='white';ctx.font='bold 46px system-ui';ctx.fillText(won?'LEVEL COMPLETE!':'GAME OVER',W/2,H/2-10);ctx.font='22px system-ui';ctx.fillText(won?('You collected '+coins+' coins!'):'Try again and collect more coins!',W/2,H/2+32);ctx.font='18px system-ui';ctx.fillText('Press Enter to play again',W/2,H/2+72);}
+  }
+  function loop(){update();draw();requestAnimationFrame(loop);}updateHud();loop();
+})();
+</script>
+</body>
+</html>
